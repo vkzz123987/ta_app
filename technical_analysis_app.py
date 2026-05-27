@@ -10,7 +10,8 @@ What it does
 - Produces three separate reports: daily, weekly, and 15-minute.
 - Draws candlestick + volume charts with moving averages, support/resistance,
   and basic pattern annotations.
-- Generates a local rule-based technical-analysis paragraph.
+- Generates a rule-based technical analysis paragraph.
+- Optionally generate prompt for users to copy/paste to chatbots for more analysis.
 - Optionally sends compact market data to an LLM endpoint and displays the LLM's
   analysis instead of, or alongside, the local report.
 
@@ -746,7 +747,7 @@ Important rules:
 Technical-analysis payload:
 {payload_json}
 
-Local rule-based analysis:
+Rule-based technical analysis:
 {local_report}
 
 Please produce the final report with these sections:
@@ -972,14 +973,14 @@ def render_sidebar() -> Dict[str, Any]:
         help="Examples: AAPL, MSFT, 2899 HK, RY TSX, CBA AU, BTCUSD, EURUSD, SP500, GC=F",
     )
 
-    st.sidebar.header("AI analysis mode")
+    st.sidebar.header("Analysis mode")
 
     analysis_mode = st.sidebar.radio(
         "Choose report mode",
         options=[
-            "Local rule-based report only",
-            "Generate copy/paste prompt for chatbot",
-            "Call LLM API directly",
+            "Rule-based technical analysis",
+            "Generate prompt for chatbot",
+            "BYO API directly",
         ],
         index=0,
         help=(
@@ -988,8 +989,8 @@ def render_sidebar() -> Dict[str, Any]:
         ),
     )
 
-    use_llm = analysis_mode == "Call LLM API directly"
-    use_chatbot_prompt = analysis_mode == "Generate copy/paste prompt for chatbot"
+    use_llm = analysis_mode == "BYO API directly"
+    use_chatbot_prompt = analysis_mode == "Generate prompt for chatbot"
 
     endpoint_url = ""
     model = ""
@@ -1027,12 +1028,12 @@ def render_sidebar() -> Dict[str, Any]:
     if use_chatbot_prompt:
         st.sidebar.caption(
             "Prompt mode has no API cost and no API-key leakage risk. "
-            "The app generates a prompt; users paste it into their own chatbot."
+            "The app generates a prompt; users copy/paste it into their own chatbot."
         )
 
     st.sidebar.header("Options")
     show_local_report_with_llm = st.sidebar.checkbox(
-        "Also show local rule-based report",
+        "Also show rule-based analysis",
         value=True,
     )
     run_button = st.sidebar.button("Generate reports", type="primary")
@@ -1109,7 +1110,7 @@ def render_report_for_timeframe(
             key=f"download_prompt_{ticker}_{timeframe_name}",
         )
 
-        with st.expander("Local rule-based report"):
+        with st.expander("Rule-based technical analysis"):
             st.markdown(local_report)
 
         return
@@ -1133,10 +1134,10 @@ def render_report_for_timeframe(
                 st.markdown("### AI-generated analysis")
                 st.markdown(llm_report)
                 if show_local_report_with_llm:
-                    with st.expander("Local rule-based report"):
+                    with st.expander("Rule-based technical analysis"):
                         st.markdown(local_report)
             else:
-                st.warning("LLM returned no report. Showing local rule-based report instead.")
+                st.warning("LLM returned no report. Showing rule-based technical analysis instead.")
                 st.markdown(local_report)
         except Exception as exc:
             st.error(f"LLM call failed: {exc}")
@@ -1147,14 +1148,16 @@ def render_report_for_timeframe(
 
 def main() -> None:
     st.set_page_config(page_title="Technical Analysis Reports", layout="wide")
-    st.title("Technical Analysis Reports with yfinance")
+    st.title("Technical Analysis on your ticker")
     st.caption("Daily, weekly and 15-minute reports. For research and education only — not financial advice.")
 
     options = render_sidebar()
 
     st.markdown(
         """
-This app pulls OHLCV data from Yahoo Finance through `yfinance`, calculates common technical indicators, finds support/resistance zones, and generates three separate reports.
+This app pulls OHLCV data from Yahoo Finance through `yfinance`, calculates common technical indicators, finds support/resistance zones, and generates daily/weekly/15-minute technical analysis reports.
+
+To have LLM do more analysis, you can generate prompt and copy/paste to your chatbot, ore BYO API.
 
 **Ticker examples:** `AAPL`, `MSFT`, `2899 HK`, `RY TSX`, `CBA AU`, `BTCUSD`, `EURUSD`, `SP500`, `GC=F`.
 """
