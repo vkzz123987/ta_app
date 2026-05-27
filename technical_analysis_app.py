@@ -715,6 +715,51 @@ def compact_payload_for_llm(ticker: str, timeframe_name: str, df: pd.DataFrame, 
         "recent_bars": compact_bars.to_dict(orient="records"),
     }
 
+def build_chatbot_prompt(
+    ticker: str,
+    timeframe_name: str,
+    payload: Dict[str, Any],
+    local_report: str,
+) -> str:
+    """Build a copy/paste prompt for ChatGPT, DeepSeek, Claude, Gemini, etc.
+
+    This does not call any LLM API. The user manually copies this prompt into
+    their preferred chatbot.
+    """
+    payload_json = json.dumps(payload, ensure_ascii=False, indent=2)
+
+    return f"""
+You are a cautious, disciplined technical analyst.
+
+Analyze the following technical-analysis data for {ticker} on the {timeframe_name} timeframe.
+
+Important rules:
+- Use only the data provided below.
+- Do not invent news, earnings, macro events, or price levels.
+- Treat support and resistance as zones, not exact guaranteed prices.
+- Do not claim certainty.
+- Give bullish, bearish, and neutral scenarios.
+- Explain trend, momentum, support/resistance, volume, and risk.
+- The final output should be practical but not overconfident.
+- This is not financial advice.
+
+Technical-analysis payload:
+{payload_json}
+
+Local rule-based analysis:
+{local_report}
+
+Please produce the final report with these sections:
+
+1. Trend analysis
+2. Momentum analysis
+3. Support and resistance interpretation
+4. Bullish scenario
+5. Bearish scenario
+6. Trading bias: bullish / neutral / bearish
+7. Risk management notes
+""".strip()
+
 
 # -----------------------------
 # Optional LLM integration
@@ -927,23 +972,76 @@ def render_sidebar() -> Dict[str, Any]:
         help="Examples: AAPL, MSFT, 2899 HK, RY TSX, CBA AU, BTCUSD, EURUSD, SP500, GC=F",
     )
 
-    st.sidebar.header("LLM analysis API - optional")
-    use_llm = st.sidebar.checkbox("Use LLM for the written report", value=False)
-    endpoint_url = st.sidebar.text_input(
-        "LLM endpoint URL",
-        value="",
-        placeholder="https://api.your-provider.com/v1/chat/completions",
+    st.sidebar.header("AI analysis mode")
+
+    analysis_mode = st.sidebar.radio(
+        "Choose report mode",
+        options=[
+            "Local rule-based report only",
+            "Generate copy/paste prompt for chatbot",
+            "Call LLM API directly",
+        ],
+        index=0,
+        help=(
+            "Prompt mode does not call any API. It only generates a prompt that users "
+            "can copy into ChatGPT, DeepSeek, Claude, Gemini, etc."
+        ),
     )
-    model = st.sidebar.text_input("Model name", value="", placeholder="your-model-name")
-    api_key = st.sidebar.text_input("API key", value="", type="password")
+
+    use_llm = analysis_mode == "Call LLM API directly"
+    use_chatbot_prompt = analysis_mode == "Generate copy/paste prompt for chatbot"
+
+    endpoint_url = ""
+    model = ""
+    api_key = ""
+
+    if use_llm:
+        st.sidebar.markdown("### LLM API settings")
+
+        endpoint_url = st.sidebar.text_input(
+            "LLM endpoint URL",
+            value="",
+            placeholder="Example: https://api.deepseek.com/chat/completions",
+            help="Enter the full chat-completions endpoint URL from your LLM provider.",
+        )
+
+        model = st.sidebar.text_input(
+            "Model name",
+            value="",
+            placeholder="Example: deepseek-chat, deepseek-reasoner, gpt-4o-mini",
+            help="Enter the exact model name provided by your LLM provider.",
+        )
+
+        api_key = st.sidebar.text_input(
+            "API key",
+            value="",
+            type="password",
+            help="Your API key is used only to call the selected LLM endpoint.",
+        )
+
+        st.sidebar.caption(
+            "API mode sends the technical-analysis payload to your selected LLM endpoint. "
+            "Do not enter a production API key unless you trust this app/server."
+        )
+
+    if use_chatbot_prompt:
+        st.sidebar.caption(
+            "Prompt mode has no API cost and no API-key leakage risk. "
+            "The app generates a prompt; users paste it into their own chatbot."
+        )
 
     st.sidebar.header("Options")
-    show_local_report_with_llm = st.sidebar.checkbox("Also show local rule-based report", value=True)
+    show_local_report_with_llm = st.sidebar.checkbox(
+        "Also show local rule-based report",
+        value=True,
+    )
     run_button = st.sidebar.button("Generate reports", type="primary")
 
     return {
         "user_ticker": user_ticker,
+        "analysis_mode": analysis_mode,
         "use_llm": use_llm,
+        "use_chatbot_prompt": use_chatbot_prompt,
         "endpoint_url": endpoint_url,
         "model": model,
         "api_key": api_key,
@@ -958,6 +1056,7 @@ def render_report_for_timeframe(
     timeframe_name: str,
     settings: Dict[str, Any],
     use_llm: bool,
+    use_chatbot_prompt: bool,
     api_key: str,
     endpoint_url: str,
     model: str,
@@ -980,6 +1079,40 @@ def render_report_for_timeframe(
         chart = build_chart(ticker, timeframe_name, df, levels, signal)
 
     st.plotly_chart(chart, use_container_width=True)
+
+    if use_chatbot_prompt:
+        payload = compact_payload_for_llm(ticker, timeframe_name, df, levels, patterns, signal)
+        chatbot_prompt = build_chatbot_prompt(
+            ticker=ticker,
+            timeframe_name=timeframe_name,
+            payload=payload,
+            local_report=local_report,
+        )
+
+        st.markdown("### Copy/paste prompt for ChatGPT / DeepSeek / Claude / Gemini")
+        st.caption(
+            "No LLM API is called here. Copy this prompt into your own chatbot to get an AI-written report."
+        )
+
+        st.text_area(
+            "Prompt",
+            value=chatbot_prompt,
+            height=420,
+            key=f"chatbot_prompt_{ticker}_{timeframe_name}",
+        )
+
+        st.download_button(
+            label="Download prompt as TXT",
+            data=chatbot_prompt,
+            file_name=f"{ticker}_{timeframe_name}_ta_prompt.txt".replace("/", "_"),
+            mime="text/plain",
+            key=f"download_prompt_{ticker}_{timeframe_name}",
+        )
+
+        with st.expander("Local rule-based report"):
+            st.markdown(local_report)
+
+        return
 
     if use_llm:
         if not api_key or not endpoint_url or not model:
@@ -1040,8 +1173,10 @@ This app pulls OHLCV data from Yahoo Finance through `yfinance`, calculates comm
 
     st.success(f"Using yfinance ticker: `{ticker}`")
 
-    tabs = st.tabs(["Daily", "Weekly", "15-Minute"])
-    for tab, timeframe_name in zip(tabs, TIMEFRAMES.keys()):
+    ordered_timeframes = ["Daily", "Weekly", "15-Minute"]
+
+    tabs = st.tabs(ordered_timeframes)
+    for tab, timeframe_name in zip(tabs, ordered_timeframes):
         with tab:
             st.subheader(f"{timeframe_name} report")
             try:
@@ -1050,6 +1185,7 @@ This app pulls OHLCV data from Yahoo Finance through `yfinance`, calculates comm
                     timeframe_name=timeframe_name,
                     settings=TIMEFRAMES[timeframe_name],
                     use_llm=options["use_llm"],
+                    use_chatbot_prompt=options["use_chatbot_prompt"],
                     api_key=options["api_key"],
                     endpoint_url=options["endpoint_url"],
                     model=options["model"],
