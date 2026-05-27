@@ -39,6 +39,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+import html
+import streamlit.components.v1 as components
 import yfinance as yf
 from plotly.subplots import make_subplots
 
@@ -762,6 +764,55 @@ Please produce the final report with these sections:
 """.strip()
 
 
+def render_copy_button(text_to_copy: str, button_label: str = "Copy prompt") -> None:
+    """Render a browser-side copy-to-clipboard button.
+
+    This uses a small Streamlit HTML component. It does not send the prompt
+    anywhere; it only copies the generated text into the user's clipboard.
+    """
+    escaped_text = html.escape(text_to_copy)
+
+    components.html(
+        f"""
+        <div>
+            <textarea id="copy-source" style="position:absolute; left:-9999px;">{escaped_text}</textarea>
+
+            <button
+                onclick="
+                    const textArea = document.getElementById('copy-source');
+                    textArea.select();
+                    textArea.setSelectionRange(0, 99999999);
+                    navigator.clipboard.writeText(textArea.value).then(function() {{
+                        const msg = document.getElementById('copy-status');
+                        msg.innerText = 'Copied!';
+                        setTimeout(() => msg.innerText = '', 1800);
+                    }}).catch(function() {{
+                        document.execCommand('copy');
+                        const msg = document.getElementById('copy-status');
+                        msg.innerText = 'Copied!';
+                        setTimeout(() => msg.innerText = '', 1800);
+                    }});
+                "
+                style="
+                    background-color:#ff4b4b;
+                    color:white;
+                    border:none;
+                    border-radius:6px;
+                    padding:0.5rem 0.9rem;
+                    font-size:0.95rem;
+                    cursor:pointer;
+                "
+            >
+                {button_label}
+            </button>
+
+            <span id="copy-status" style="margin-left:10px; color:#0a7f3f; font-weight:600;"></span>
+        </div>
+        """,
+        height=55,
+    )
+
+
 # -----------------------------
 # Optional LLM integration
 # -----------------------------
@@ -1094,6 +1145,8 @@ def render_report_for_timeframe(
         st.caption(
             "No LLM API is called here. Copy this prompt into your own chatbot to get an AI-written report."
         )
+
+        render_copy_button(chatbot_prompt, "Copy prompt")
 
         st.text_area(
             "Prompt",
